@@ -68,7 +68,6 @@ function getFilestem(filepath) {
     return lastIndex > 0 ? filename.substring(0, lastIndex) : filename;
 }
 
-
 async function generateJavascriptParser(ksyContent) {
     logger.generate(`${ksyContent.meta.id}`);
 
@@ -198,6 +197,20 @@ async function exportToJson(parsedData, jsonFile, format = false) {
     });
 }
 
+const findBinaryFile = (directory, filename) => {
+    const files = fs.readdirSync(directory, { withFileTypes: true });
+    for (const file of files) {
+        const fullPath = path.join(directory, file.name);
+        if (file.isFile() && file.name === filename) {
+            return fullPath;
+        } else if (file.isDirectory()) {
+            const result = findBinaryFile(fullPath, filename);
+            if (result) return result;
+        }
+    }
+    return null;
+};
+
 (async function main() {
     logger.time('ksdump');
     console.log();
@@ -209,25 +222,20 @@ async function exportToJson(parsedData, jsonFile, format = false) {
 
     const [, , formatPath, inputPath, outputPath, formatFlag] = process.argv;
     const formatOption = formatFlag === "--format";
+    const parseYAML = (yamlFile) => yaml.parse(fs.readFileSync(yamlFile, 'utf-8'));
 
-    const parseYAML = (yamlFile) => {
-        const yamlData = fs.readFileSync(yamlFile, 'utf-8');
-        return yaml.parse(yamlData);
-    };
-
-    logger.process(`${formatPath}`)
+    logger.process(`${formatPath}`);
     const promises = [];
     if (fs.statSync(formatPath).isDirectory()) {
         const ksyFiles = fs.readdirSync(formatPath).filter(file => file.endsWith(".ksy"));
         for (const ksyFile of ksyFiles) {
             const ksyContent = await parseYAML(path.join(formatPath, ksyFile));
             const parser = await generateJavascriptParser(ksyContent);
-            if (parser == undefined) {
-                continue;
-            }
+            if (parser == undefined) continue;
+
             const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
-            const binaryFile = path.join(inputPath, binaryFilename);
-            if (!fs.existsSync(binaryFile)) {
+            const binaryFile = findBinaryFile(inputPath, binaryFilename);
+            if (!binaryFile) {
                 logger.skip(`${binaryFilename} not found for format ${ksyFile}.`);
                 continue;
             }
@@ -240,8 +248,12 @@ async function exportToJson(parsedData, jsonFile, format = false) {
         if (parser != undefined) {
             const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
             const binaryFile = fs.statSync(inputPath).isDirectory()
-                ? path.join(inputPath, binaryFilename)
+                ? findBinaryFile(inputPath, binaryFilename)
                 : inputPath;
+            if (!binaryFile) {
+                logger.skip(`${binaryFilename} not found.`);
+                return;
+            }
             const parsedData = await parseInputFile(parser, binaryFile);
             promises.push(exportToJson(parsedData, `${getFilestem(binaryFile)}.json`, formatOption));
         }
