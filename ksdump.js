@@ -158,9 +158,17 @@ async function exportToJson(parsedData, jsonFile, format = false) {
         }
     };
 
+    function removeNullChars(key, value) {
+        if (typeof value === 'string') {
+            return value.replace(/\u0000/g, '');
+        }
+        return value;
+    }
+
     const filteredData = filterObject(parsedData);
-    const stringifyStream = new JsonStreamStringify(filteredData);
+    const stringifyStream = new JsonStreamStringify(filteredData, removeNullChars);
     const outputStream = fs.createWriteStream(jsonFile);
+
 
     return new Promise((resolve, reject) => {
         stringifyStream
