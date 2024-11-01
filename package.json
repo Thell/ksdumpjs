@@ -2,18 +2,24 @@
   "name": "ksdumpjs",
   "version": "1.0.0",
   "description": "Dump binary to json using format.",
-  "main": "index.js",
+  "main": "ksdump.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Thell",
   "license": "Unlicense",
   "dependencies": {
+    "json-stream-stringify": "^3.1.6",
     "kaitai-struct": "^0.10.0",
     "kaitai-struct-compiler": "^0.11.0-SNAPSHOT20241002.233639.542b241",
+    "node-jq": "^6.0.1",
+    "require-from-string": "^2.0.2",
+    "signale": "^1.4.0",
     "yaml": "^2.6.0"
   },
   "devDependencies": {
+    "@types/node": "^22.8.4",
     "eslint": "^9.13.0",
     "typescript": "^5.6.3"
   }
