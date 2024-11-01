@@ -68,13 +68,22 @@ function getFilestem(filepath) {
     return lastIndex > 0 ? filename.substring(0, lastIndex) : filename;
 }
 
+
 async function generateJavascriptParser(ksyContent) {
     logger.generate(`${ksyContent.meta.id}`);
+
+    const toPascalCase = (str) =>
+        str.replace(/(^\w|_\w)/g, (match) => match.replace('_', '').toUpperCase());
+
     const compiler = KaitaiStructCompiler;
     const compiled = await compiler.compile("javascript", ksyContent);
 
-    const parserName = ksyContent.meta.id + ".js";
-    const parserKey = Object.keys(compiled).find((key) => key.toLowerCase() === parserName.toLowerCase());
+    const parserName = toPascalCase(ksyContent.meta.id) + ".js";
+    const parserKey = Object.keys(compiled).find((key) => key === parserName);
+    if (compiled[parserKey] == undefined) {
+        logger.error(`${ksyContent.meta.id}`);
+        console.log(`No match found for ${ksyContent.meta.id} in compiled format output!`);
+    }
     return compiled[parserKey];
 }
 
@@ -213,6 +222,9 @@ async function exportToJson(parsedData, jsonFile, format = false) {
         for (const ksyFile of ksyFiles) {
             const ksyContent = await parseYAML(path.join(formatPath, ksyFile));
             const parser = await generateJavascriptParser(ksyContent);
+            if (parser == undefined) {
+                continue;
+            }
             const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
             const binaryFile = path.join(inputPath, binaryFilename);
             if (!fs.existsSync(binaryFile)) {
@@ -225,12 +237,14 @@ async function exportToJson(parsedData, jsonFile, format = false) {
     } else {
         const ksyContent = await parseYAML(formatPath);
         const parser = await generateJavascriptParser(ksyContent);
-        const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
-        const binaryFile = fs.statSync(inputPath).isDirectory()
-            ? path.join(inputPath, binaryFilename)
-            : inputPath;
-        const parsedData = await parseInputFile(parser, binaryFile);
-        promises.push(exportToJson(parsedData, `${getFilestem(binaryFile)}.json`, formatOption));
+        if (parser != undefined) {
+            const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
+            const binaryFile = fs.statSync(inputPath).isDirectory()
+                ? path.join(inputPath, binaryFilename)
+                : inputPath;
+            const parsedData = await parseInputFile(parser, binaryFile);
+            promises.push(exportToJson(parsedData, `${getFilestem(binaryFile)}.json`, formatOption));
+        }
     }
 
     await Promise.all(promises);
