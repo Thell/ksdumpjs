@@ -86,54 +86,65 @@ async function generateJavascriptParser(ksyContent) {
     return compiled[parserKey];
 }
 
-async function parseInputFile(parser, binaryFile) {
-    logger.parse(`${binaryFile}`);
+function getBinaryBuffer(binaryFile) {
     const inputBinary = fs.readFileSync(binaryFile);
-    const inputBuffer = Buffer.from(inputBinary);
-    const inputStream = new KaitaiStruct.KaitaiStream(inputBuffer, 0);
+    return Buffer.from(inputBinary);
+}
 
+const initializeParser = (parser) => {
     const GeneratedParser = require_from_string(parser);
     const parserName = Object.keys(GeneratedParser)[0];
     const ParserConstructor = GeneratedParser[parserName];
-    const parsed = new ParserConstructor(inputStream);
 
     const enumNames = Object.getOwnPropertyNames(ParserConstructor).filter((name) => {
         const value = ParserConstructor[name];
         return typeof value === "object" && value !== null && typeof value._read !== "function";
     });
 
-    const processParsedData = (data) => {
-        if (Array.isArray(data)) {
-            data.forEach(processParsedData);
-        } else if (data !== null && typeof data === "object") {
-            // Instantiate instance members, these virtual properties create
-            // new properties prefixed with `_m_`.
-            const prototype = Object.getPrototypeOf(data);
-            if (prototype) {
-                Object.getOwnPropertyNames(prototype).forEach((prop) => {
-                    if (!prop.startsWith('_')) {
-                        const _ = data[prop];
-                    }
-                });
-            }
+    return { ParserConstructor, enumNames };
+}
 
-            // Populate enum value names, perhaps even in an instantiated instance.
-            for (const key in data) {
-                if (key.startsWith("_") && !key.startsWith("_m_")) continue;
-                const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1);
-                if (enumNames.includes(capitalizedKey)) {
-                    const enumValues = ParserConstructor[capitalizedKey];
-                    data[key] = { name: enumValues[data[key]], value: data[key] };
-                } else {
-                    processParsedData(data[key]);
-                }
+const instantiateVirtualProperies = (obj) => {
+    // Instantiate instance members, these virtual properties create
+    // new properties prefixed with `_m_` which are populate in the filter.
+    const prototype = Object.getPrototypeOf(obj);
+    if (prototype) {
+        Object.getOwnPropertyNames(prototype).forEach((prop) => {
+            if (!prop.startsWith('_')) {
+                const _ = obj[prop];
+            }
+        });
+    }
+}
+
+const processParsedData = (data, ParserConstructor, enumNames) => {
+    if (Array.isArray(data)) {
+        data.forEach(datum => processParsedData(datum, ParserConstructor, enumNames));
+    } else if (data !== null && typeof data === "object") {
+        instantiateVirtualProperies(data);
+        // Populate enum value names.
+        for (const key in data) {
+            if (key.startsWith("_") && !key.startsWith("_m_")) continue;
+            const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1);
+            if (enumNames.includes(capitalizedKey)) {
+                const enumValues = ParserConstructor[capitalizedKey];
+                data[key] = { name: enumValues[data[key]], value: data[key] };
+            } else {
+                processParsedData(data[key], ParserConstructor, enumNames);
             }
         }
-    };
+    }
+};
+
+async function parseInputFile(parser, binaryFile) {
+    logger.parse(`${binaryFile}`);
+
+    const inputBuffer = getBinaryBuffer(binaryFile);
+    const { ParserConstructor, enumNames } = initializeParser(parser);
+    const parsed = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0));
 
     logger.populate(`${binaryFile}`);
-    processParsedData(parsed);
-
+    processParsedData(parsed, ParserConstructor, enumNames);
     return parsed;
 }
 
