@@ -137,68 +137,65 @@ async function parseInputFile(parser, binaryFile) {
     return parsed;
 }
 
+const filterObject = (obj) => {
+    if (Array.isArray(obj)) {
+        return obj.map(filterObject);
+    } else if (obj !== null && typeof obj === 'object') {
+        return Object.keys(obj).reduce((acc, key) => {
+            if (key.startsWith('_m_')) {
+                acc[key.slice(3)] = filterObject(obj[key]);
+            } else if (!key.startsWith('_')) {
+                acc[key] = filterObject(obj[key]);
+            }
+            return acc;
+        }, {});
+    }
+    return obj;
+};
+
+const removeNullChars = (key, value) => {
+    return typeof value === 'string' ? value.replace(/\u0000/g, '') : value;
+};
+
+const formatJsonFile = async (jsonFile) => {
+    try {
+        logger.format(`${jsonFile}`);
+        const tmpFile = `${jsonFile}.tmp`;
+        fs.renameSync(jsonFile, tmpFile);
+
+        const jqPath = "./node_modules/node-jq/bin/jq.exe";
+        const command = `"${jqPath}" . "${tmpFile}" > "${jsonFile}"`;
+        execSync(command, { stdio: 'inherit' });
+
+        fs.unlinkSync(tmpFile);
+        logger.success(`${jsonFile}`);
+    } catch (error) {
+        logger.error(`${jsonFile}`);
+        console.error("Error formatting JSON:", error);
+        throw error;
+    }
+};
+
 async function exportToJson(parsedData, jsonFile, format = false) {
     logger.export(`${jsonFile}`);
-
-    const filterObject = (obj) => {
-        if (Array.isArray(obj)) {
-            return obj.map(filterObject);
-        } else if (obj !== null && typeof obj === 'object') {
-            return Object.keys(obj).reduce((acc, key) => {
-                if (key.startsWith('_m_')) {
-                    // Instantiated instance member.
-                    acc[key.slice(3)] = filterObject(obj[key]);
-                } else if (!key.startsWith('_')) {
-                    acc[key] = filterObject(obj[key]);
-                }
-                return acc;
-            }, {});
-        } else {
-            return obj;
-        }
-    };
-
-    function removeNullChars(key, value) {
-        if (typeof value === 'string') {
-            return value.replace(/\u0000/g, '');
-        }
-        return value;
-    }
 
     const filteredData = filterObject(parsedData);
     const stringifyStream = new JsonStreamStringify(filteredData, removeNullChars);
     const outputStream = fs.createWriteStream(jsonFile);
-
 
     return new Promise((resolve, reject) => {
         stringifyStream
             .pipe(outputStream)
             .on('finish', async () => {
                 if (format) {
-                    try {
-                        logger.format(`${jsonFile}`);
-                        const tmpFile = `${jsonFile}.tmp`;
-                        fs.renameSync(jsonFile, tmpFile);
-
-                        const jqPath = "./node_modules/node-jq/bin/jq.exe";
-                        const command = `"${jqPath}" . "${tmpFile}" > "${jsonFile}"`;
-                        execSync(command, { stdio: 'inherit' });
-
-                        fs.unlinkSync(tmpFile);
-                        logger.success(`${jsonFile}`);
-                        console.log();
-                    } catch (error) {
-                        logger.error("Error formatting JSON:", error);
-                        return reject(error);
-                    }
+                    await formatJsonFile(jsonFile);
                 } else {
                     logger.success(`${jsonFile}`);
-                    console.log();
-
                 }
                 resolve();
             })
-            .on('error', error => {
+            .on('error', (error) => {
+                logger.error(`${jsonFile}`);
                 logger.error("Error writing JSON file:", error);
                 reject(error);
             });
@@ -262,5 +259,6 @@ async function getBinaryFile(inputPath, ksyContent) {
     }
 
     await Promise.all(promises);
+    console.log();
     logger.timeEnd('ksdump');
 })();
