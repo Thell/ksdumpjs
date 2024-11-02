@@ -46,7 +46,7 @@ const logger = new Signale({
         skip: {
             badge: '⤵️',
             label: 'Skipping:',
-            color: 'green',
+            color: 'yellow',
         },
         success: {
             badge: '✅',
@@ -219,6 +219,13 @@ const findBinaryFile = (directory, filename) => {
     return null;
 };
 
+async function getBinaryFile(inputPath, ksyContent) {
+    const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
+    return fs.statSync(inputPath).isDirectory()
+        ? findBinaryFile(inputPath, binaryFilename)
+        : inputPath;
+}
+
 (async function main() {
     logger.time('ksdump');
     console.log();
@@ -232,38 +239,25 @@ const findBinaryFile = (directory, filename) => {
     const formatOption = formatFlag === "--format";
     const parseYAML = (yamlFile) => yaml.parse(fs.readFileSync(yamlFile, 'utf-8'));
 
-    logger.process(`${formatPath}`);
-    const promises = [];
-    if (fs.statSync(formatPath).isDirectory()) {
-        const ksyFiles = fs.readdirSync(formatPath).filter(file => file.endsWith(".ksy"));
-        for (const ksyFile of ksyFiles) {
-            const ksyContent = await parseYAML(path.join(formatPath, ksyFile));
-            const parser = await generateJavascriptParser(ksyContent);
-            if (parser == undefined) continue;
+    const formatFiles = fs.statSync(formatPath).isDirectory()
+        ? fs.readdirSync(formatPath).filter(file => file.endsWith(".ksy")).map(file => path.join(formatPath, file))
+        : [formatPath];
 
-            const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
-            const binaryFile = findBinaryFile(inputPath, binaryFilename);
-            if (!binaryFile) {
-                logger.skip(`${binaryFilename} not found for format ${ksyFile}.`);
-                continue;
-            }
+    const promises = [];
+    for (const ksyFile of formatFiles) {
+        logger.process(`${ksyFile}`);
+
+        const ksyContent = await parseYAML(ksyFile);
+        const binaryFile = await getBinaryFile(inputPath, ksyContent);
+        const outFile = `${fs.statSync(formatPath).isDirectory() ? ksyContent.meta.id : getFilestem(binaryFile)}.json`;
+        const outputFilePath = path.join(outputPath, outFile);
+
+        if (binaryFile) {
+            const parser = await generateJavascriptParser(ksyContent);
             const parsedData = await parseInputFile(parser, binaryFile);
-            promises.push(exportToJson(parsedData, path.join(outputPath, `${ksyContent.meta.id}.json`), formatOption));
-        };
-    } else {
-        const ksyContent = await parseYAML(formatPath);
-        const parser = await generateJavascriptParser(ksyContent);
-        if (parser != undefined) {
-            const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta["file-extension"]}`;
-            const binaryFile = fs.statSync(inputPath).isDirectory()
-                ? findBinaryFile(inputPath, binaryFilename)
-                : inputPath;
-            if (!binaryFile) {
-                logger.skip(`${binaryFilename} not found.`);
-                return;
-            }
-            const parsedData = await parseInputFile(parser, binaryFile);
-            promises.push(exportToJson(parsedData, path.join(outputPath, `${getFilestem(binaryFile)}.json`), formatOption));
+            promises.push(exportToJson(parsedData, outputFilePath, formatOption));
+        } else {
+            logger.skip(`${ksyContent.meta.id}.${ksyContent.meta["file-extension"]} not found for format ${path.basename(ksyFile)}.`);
         }
     }
 
