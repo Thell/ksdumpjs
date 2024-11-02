@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import { execSync } from 'child_process'
 
 import { JsonStreamStringify } from 'json-stream-stringify'
 import KaitaiStruct from 'kaitai-struct'
@@ -15,12 +14,12 @@ const logger = new Signale({
   types: {
     export: {
       badge: '📤',
-      label: 'Exporting',
+      label: 'Exporting:',
       color: 'cyan'
     },
-    format: {
-      badge: '📝',
-      label: 'Formatting with jq:',
+    extract: {
+      badge: '📤',
+      label: 'Extracting parsed data:',
       color: 'cyan'
     },
     generate: {
@@ -125,7 +124,7 @@ const instantiateInstanceData = (obj) => {
   }
 }
 
-const extractParsedData = (data) => {
+const extractParsedData = (data, binaryFile) => {
   if (Array.isArray(data)) {
     return data.map(extractParsedData)
   } else if (data !== null && typeof data === 'object') {
@@ -166,7 +165,10 @@ async function parseInputFile (parser, binaryFile) {
 
   logger.populate(`${binaryFile}`)
   processParsedData(parsed, ParserConstructor, enumNames)
-  return parsed
+
+  logger.extract(`${binaryFile}`)
+  const data = extractParsedData(parsed, binaryFile)
+  return data
 }
 
 async function processParsedData (data, ParserConstructor, enumNames) {
@@ -189,21 +191,21 @@ async function processParsedData (data, ParserConstructor, enumNames) {
 };
 
 async function exportToJson (parsedData, jsonFile, format = false) {
-  logger.export(`${jsonFile}`)
-
-  const reducedData = extractParsedData(parsedData)
-  const stringifyStream = new JsonStreamStringify(reducedData, removeNullChars)
+  const stringifyStream = new JsonStreamStringify(parsedData, removeNullChars, format ? 2 : 0)
   const outputStream = fs.createWriteStream(jsonFile)
+  let once = true
 
   return new Promise((resolve, reject) => {
     stringifyStream
       .pipe(outputStream)
-      .on('finish', async () => {
-        if (format) {
-          await formatJsonFile(jsonFile)
-        } else {
-          logger.success(`${jsonFile}`)
+      .on('drain', () => {
+        if (once) {
+          logger.export(`${jsonFile}`)
+          once = false
         }
+      })
+      .on('finish', () => {
+        logger.success(`${jsonFile}`)
         resolve()
       })
       .on('error', (error) => {
@@ -213,25 +215,6 @@ async function exportToJson (parsedData, jsonFile, format = false) {
       })
   })
 }
-
-async function formatJsonFile (jsonFile) {
-  try {
-    logger.format(`${jsonFile}`)
-    const tmpFile = `${jsonFile}.tmp`
-    fs.renameSync(jsonFile, tmpFile)
-
-    const jqPath = './node_modules/node-jq/bin/jq.exe'
-    const command = `"${jqPath}" . "${tmpFile}" > "${jsonFile}"`
-    execSync(command, { stdio: 'inherit' })
-
-    fs.unlinkSync(tmpFile)
-    logger.success(`${jsonFile}`)
-  } catch (error) {
-    logger.error(`${jsonFile}`)
-    console.error('Error formatting JSON:', error)
-    throw error
-  }
-};
 
 (async function main () {
   logger.time('ksdump')
@@ -260,15 +243,15 @@ async function formatJsonFile (jsonFile) {
     const outputFilePath = path.join(outputPath, outFile)
 
     if (binaryFile) {
-      const parser = await generateJavascriptParser(ksyContent)
-      const parsedData = await parseInputFile(parser, binaryFile)
-      promises.push(exportToJson(parsedData, outputFilePath, formatOption))
+      await generateJavascriptParser(ksyContent)
+        .then(parser => parseInputFile(parser, binaryFile))
+        .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
     } else {
       logger.skip(`${ksyContent.meta.id}.${ksyContent.meta['file-extension']} not found for format ${path.basename(ksyFile)}.`)
     }
   }
 
-  await Promise.all(promises)
+  await Promise.allSettled(promises)
   console.log()
   logger.timeEnd('ksdump')
 })()
