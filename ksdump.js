@@ -74,6 +74,13 @@ const findBinaryFile = (directory, filename) => {
   return null
 }
 
+const getBinaryFile = async (inputPath, ksyContent) => {
+  const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta['file-extension']}`
+  return fs.statSync(inputPath).isDirectory()
+    ? findBinaryFile(inputPath, binaryFilename)
+    : inputPath
+}
+
 const getBinaryBuffer = (binaryFile) => {
   const inputBinary = fs.readFileSync(binaryFile)
   return Buffer.from(inputBinary)
@@ -137,25 +144,6 @@ const extractParsedData = (data) => {
   return data
 }
 
-async function processParsedData (data, ParserConstructor, enumNames) {
-  if (Array.isArray(data)) {
-    data.forEach(datum => processParsedData(datum, ParserConstructor, enumNames))
-  } else if (data !== null && typeof data === 'object') {
-    instantiateInstanceData(data)
-    // Populate enum value names and keep instance properties.
-    for (const key in data) {
-      if (key.startsWith('_') && !key.startsWith('_m_')) continue
-      const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1)
-      if (enumNames.includes(capitalizedKey)) {
-        const enumValues = ParserConstructor[capitalizedKey]
-        data[key] = { name: enumValues[data[key]], value: data[key] }
-      } else {
-        processParsedData(data[key], ParserConstructor, enumNames)
-      }
-    }
-  }
-};
-
 async function generateJavascriptParser (ksyContent) {
   logger.generate(`${ksyContent.meta.id}`)
 
@@ -183,22 +171,22 @@ async function parseInputFile (parser, binaryFile) {
   return parsed
 }
 
-async function formatJsonFile (jsonFile) {
-  try {
-    logger.format(`${jsonFile}`)
-    const tmpFile = `${jsonFile}.tmp`
-    fs.renameSync(jsonFile, tmpFile)
-
-    const jqPath = './node_modules/node-jq/bin/jq.exe'
-    const command = `"${jqPath}" . "${tmpFile}" > "${jsonFile}"`
-    execSync(command, { stdio: 'inherit' })
-
-    fs.unlinkSync(tmpFile)
-    logger.success(`${jsonFile}`)
-  } catch (error) {
-    logger.error(`${jsonFile}`)
-    console.error('Error formatting JSON:', error)
-    throw error
+async function processParsedData (data, ParserConstructor, enumNames) {
+  if (Array.isArray(data)) {
+    data.forEach(datum => processParsedData(datum, ParserConstructor, enumNames))
+  } else if (data !== null && typeof data === 'object') {
+    instantiateInstanceData(data)
+    // Populate enum value names and keep instance properties.
+    for (const key in data) {
+      if (key.startsWith('_') && !key.startsWith('_m_')) continue
+      const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1)
+      if (enumNames.includes(capitalizedKey)) {
+        const enumValues = ParserConstructor[capitalizedKey]
+        data[key] = { name: enumValues[data[key]], value: data[key] }
+      } else {
+        processParsedData(data[key], ParserConstructor, enumNames)
+      }
+    }
   }
 };
 
@@ -228,12 +216,24 @@ async function exportToJson (parsedData, jsonFile, format = false) {
   })
 }
 
-async function getBinaryFile (inputPath, ksyContent) {
-  const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta['file-extension']}`
-  return fs.statSync(inputPath).isDirectory()
-    ? findBinaryFile(inputPath, binaryFilename)
-    : inputPath
-}
+async function formatJsonFile (jsonFile) {
+  try {
+    logger.format(`${jsonFile}`)
+    const tmpFile = `${jsonFile}.tmp`
+    fs.renameSync(jsonFile, tmpFile)
+
+    const jqPath = './node_modules/node-jq/bin/jq.exe'
+    const command = `"${jqPath}" . "${tmpFile}" > "${jsonFile}"`
+    execSync(command, { stdio: 'inherit' })
+
+    fs.unlinkSync(tmpFile)
+    logger.success(`${jsonFile}`)
+  } catch (error) {
+    logger.error(`${jsonFile}`)
+    console.error('Error formatting JSON:', error)
+    throw error
+  }
+};
 
 (async function main () {
   logger.time('ksdump')
