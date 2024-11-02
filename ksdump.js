@@ -93,8 +93,8 @@ const getFilestem = (filepath) => {
 }
 
 const removeNullChars = (key, value) => {
-  // eslint-disable-next-line no-control-regex
-  return typeof value === 'string' ? value.replace(/\u0000/g, '') : value
+  const nullChar = String.fromCharCode(0)
+  return typeof value === 'string' ? value.replace(new RegExp(nullChar, 'g'), '') : value
 }
 
 const toPascalCase = (str) =>
@@ -118,10 +118,8 @@ const instantiateInstanceData = (obj) => {
   const prototype = Object.getPrototypeOf(obj)
   if (prototype) {
     Object.getOwnPropertyNames(prototype).forEach((prop) => {
-      if (!prop.startsWith('_')) {
-        // Access to trigger instantiation only.
-        // eslint-disable-next-line no-unused-vars
-        const _ = obj[prop]
+      if (!prop.startsWith('_') && obj[prop] !== undefined) {
+        // Intentionally empty to trigger instantiation side effect.
       }
     })
   }
