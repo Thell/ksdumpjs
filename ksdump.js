@@ -263,7 +263,7 @@ const findBinaryFile = (directory, filename) => {
                 return;
             }
             const parsedData = await parseInputFile(parser, binaryFile);
-            promises.push(exportToJson(parsedData, `${getFilestem(binaryFile)}.json`, formatOption));
+            promises.push(exportToJson(parsedData, path.join(outputPath, `${getFilestem(binaryFile)}.json`), formatOption));
         }
     }
 
