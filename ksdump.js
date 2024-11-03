@@ -183,24 +183,17 @@ async function processParsedData (data, ParserConstructor, enumNames) {
 async function exportToJson (parsedData, jsonFile, format = false) {
   const stringifyStream = new JsonStreamStringify(parsedData, removeNullChars, format ? 2 : 0)
   const outputStream = fs.createWriteStream(jsonFile)
-  let once = true
 
+  logger.export(`${jsonFile}`)
   return new Promise((resolve, reject) => {
     stringifyStream
       .pipe(outputStream)
-      .on('drain', () => {
-        if (once) {
-          logger.export(`${jsonFile}`)
-          once = false
-        }
-      })
       .on('finish', () => {
         logger.success(`${jsonFile}`)
         resolve()
       })
       .on('error', (error) => {
         logger.error(`${jsonFile}`)
-        logger.error('Error writing JSON file:', error)
         reject(error)
       })
   })
