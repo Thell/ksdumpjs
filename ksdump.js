@@ -152,14 +152,14 @@ async function generateJavascriptParser (ksyContent) {
     logger.error(`${ksyContent.meta.id}`)
     console.log(`No match found for ${ksyContent.meta.id} in compiled format output!`)
   }
-  return compiled[parserKey]
+
+  return initializeParser(compiled[parserKey])
 }
 
-async function parseInputFile (parser, binaryFile) {
+async function parseInputFile ({ ParserConstructor, enumNames }, binaryFile) {
   logger.parse(`${binaryFile}`)
 
   const inputBuffer = getBinaryBuffer(binaryFile)
-  const { ParserConstructor, enumNames } = initializeParser(parser)
   const parsed = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
 
   logger.populate(`${binaryFile}`)
@@ -242,7 +242,7 @@ async function exportToJson (parsedData, jsonFile, format = false) {
 
     if (binaryFile) {
       await generateJavascriptParser(ksyContent)
-        .then(parser => parseInputFile(parser, binaryFile))
+        .then(({ ParserConstructor, enumNames }) => parseInputFile({ ParserConstructor, enumNames }, binaryFile))
         .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
     } else {
       logger.skip(`${ksyContent.meta.id}.${ksyContent.meta['file-extension']} not found for format ${path.basename(ksyFile)}.`)
