@@ -98,19 +98,6 @@ const removeNullChars = (key, value) => {
 const toPascalCase = (str) =>
   str.replace(/(^\w|_\w)/g, (match) => match.replace('_', '').toUpperCase())
 
-const initializeParser = (parser) => {
-  const GeneratedParser = requireFromString(parser)
-  const parserName = Object.keys(GeneratedParser)[0]
-  const ParserConstructor = GeneratedParser[parserName]
-
-  const enumNames = Object.getOwnPropertyNames(ParserConstructor).filter((name) => {
-    const value = ParserConstructor[name]
-    return typeof value === 'object' && value !== null && typeof value._read !== 'function'
-  })
-
-  return { ParserConstructor, enumNames }
-}
-
 const instantiateInstanceData = (obj) => {
   // New properties prefixed with `_m_` are created at instantiation.
   const prototype = Object.getPrototypeOf(obj)
@@ -143,17 +130,21 @@ const extractParsedData = (data) => {
 async function generateJavascriptParser (ksyContent) {
   logger.generate(`${ksyContent.meta.id}`)
 
-  const compiler = KaitaiStructCompiler
-  const compiled = await compiler.compile('javascript', ksyContent)
-
-  const parserName = toPascalCase(ksyContent.meta.id) + '.js'
-  const parserKey = Object.keys(compiled).find((key) => key === parserName)
-  if (compiled[parserKey] === undefined) {
-    logger.error(`${ksyContent.meta.id}`)
-    console.log(`No match found for ${ksyContent.meta.id} in compiled format output!`)
-  }
-
-  return initializeParser(compiled[parserKey])
+  const parserName = `${toPascalCase(ksyContent.meta.id)}.js`
+  return KaitaiStructCompiler.compile('javascript', ksyContent)
+    .then((file) => {
+      if (parserName in file) {
+        const ParserConstructor = requireFromString(file[parserName])[parserName.slice(0, -3)]
+        const enumNames = Object.getOwnPropertyNames(ParserConstructor).filter((name) => {
+          const value = ParserConstructor[name]
+          return typeof value === 'object' && value !== null && typeof value._read !== 'function'
+        })
+        return { ParserConstructor, enumNames }
+      } else {
+        logger.error(parserName)
+        return Promise.reject(new Error(`KaitaiStructCompiler output does not contain ${parserName}`))
+      }
+    })
 }
 
 async function parseInputFile ({ ParserConstructor, enumNames }, binaryFile) {
@@ -244,6 +235,7 @@ async function exportToJson (parsedData, jsonFile, format = false) {
       await generateJavascriptParser(ksyContent)
         .then(({ ParserConstructor, enumNames }) => parseInputFile({ ParserConstructor, enumNames }, binaryFile))
         .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
+        .catch((error) => logger.error(`Skipped: ${error}`))
     } else {
       logger.skip(`${ksyContent.meta.id}.${ksyContent.meta['file-extension']} not found for format ${path.basename(ksyFile)}.`)
     }
