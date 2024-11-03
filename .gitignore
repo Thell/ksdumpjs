@@ -131,6 +131,7 @@ dist
 .pnp.*
 
 formats/
+parsers/
 binaries/
 jsons/
 gamecommondata/

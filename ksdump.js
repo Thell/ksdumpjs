@@ -1,12 +1,11 @@
-import fs from 'fs'
-import path from 'path'
-
-import { JsonStreamStringify } from 'json-stream-stringify'
-import KaitaiStruct from 'kaitai-struct'
-import KaitaiStructCompiler from 'kaitai-struct-compiler'
-import requireFromString from 'require-from-string'
-import signalePkg from 'signale'
-import yaml from 'yaml'
+const fs = require('fs')
+const fsPromises = require('fs').promises
+const path = require('path')
+const { JsonStreamStringify } = require('json-stream-stringify')
+const KaitaiStruct = require('kaitai-struct')
+const KaitaiStructCompiler = require('kaitai-struct-compiler')
+const signalePkg = require('signale')
+const yaml = require('yaml')
 
 const { Signale } = signalePkg
 const logger = new Signale({
@@ -128,25 +127,55 @@ const extractParsedData = (data) => {
   return data
 }
 
+const yamlImporter = {
+  importYaml: function (name, mode) {
+    console.log("  -> Import yaml called with name '" + name + "' and mode '" + mode + "'.")
+    console.log(`parsing ${'test/formats/' + name + '.ksy'}`)
+    const importFileBuffer = fs.readFileSync('test/formats/' + name + '.ksy', 'utf8')
+    const importKsyContent = yaml.parse(importFileBuffer)
+    return Promise.resolve(importKsyContent)
+  }
+}
+
 async function generateJavascriptParser (ksyContent) {
   logger.generate(`${ksyContent.meta.id}`)
 
   const parserName = `${toPascalCase(ksyContent.meta.id)}.js`
-  return KaitaiStructCompiler.compile('javascript', ksyContent)
-    .then((file) => {
-      if (parserName in file) {
-        const ParserConstructor = requireFromString(file[parserName])[parserName.slice(0, -3)]
+  const compiledFiles = await KaitaiStructCompiler.compile('javascript', ksyContent, yamlImporter)
+
+  const tempDir = './parsers'
+  await fsPromises.mkdir(tempDir, { recursive: true })
+
+  let ParserConstructor
+  let enumNameMap = new Map()
+  for (const [fileName, fileContent] of Object.entries(compiledFiles)) {
+    try {
+      const filePath = path.join(tempDir, fileName)
+      await fsPromises.writeFile(filePath, fileContent, 'utf8')
+
+      if (fileName === parserName) {
+        const importedModule = require(path.resolve(filePath))
+        ParserConstructor = importedModule[parserName.slice(0, -3)]
+
         const enumNames = Object.getOwnPropertyNames(ParserConstructor).filter((name) => {
           const value = ParserConstructor[name]
           return typeof value === 'object' && value !== null && typeof value._read !== 'function'
         })
-        const enumNameMap = new Map(enumNames.map(name => [toCamelCase(name), name]))
-        return { ParserConstructor, enumNameMap }
-      } else {
-        logger.error(parserName)
-        return Promise.reject(new Error(`KaitaiStructCompiler output does not contain ${parserName}`))
+        enumNameMap = new Map(enumNames.map(name => [toCamelCase(name), name]))
       }
-    })
+    } catch (error) {
+      logger.error(parserName)
+      console.error('Error during import:', error)
+      throw error
+    }
+  }
+
+  if (ParserConstructor) {
+    return { ParserConstructor, enumNameMap }
+  } else {
+    logger.error(parserName)
+    throw new Error(`KaitaiStructCompiler output does not contain ${parserName}`)
+  }
 }
 
 async function parseInputFile ({ ParserConstructor, enumNameMap }, binaryFile) {
