@@ -123,7 +123,7 @@ const instantiateInstanceData = (obj) => {
   }
 }
 
-const extractParsedData = (data, binaryFile) => {
+const extractParsedData = (data) => {
   if (Array.isArray(data)) {
     return data.map(extractParsedData)
   } else if (data !== null && typeof data === 'object') {
@@ -232,7 +232,6 @@ async function exportToJson (parsedData, jsonFile, format = false) {
     ? fs.readdirSync(formatPath).filter(file => file.endsWith('.ksy')).map(file => path.join(formatPath, file))
     : [formatPath]
 
-  const promises = []
   for (const ksyFile of formatFiles) {
     logger.process(`${ksyFile}`)
 
@@ -250,7 +249,6 @@ async function exportToJson (parsedData, jsonFile, format = false) {
     }
   }
 
-  await Promise.allSettled(promises)
   console.log()
   logger.timeEnd('ksdump')
 })()
