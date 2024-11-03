@@ -95,8 +95,9 @@ const removeNullChars = (key, value) => {
   return typeof value === 'string' ? value.replace(new RegExp(nullChar, 'g'), '') : value
 }
 
-const toPascalCase = (str) =>
-  str.replace(/(^\w|_\w)/g, (match) => match.replace('_', '').toUpperCase())
+const toCamelCase = (str) => str.charAt(0).toLowerCase() + str.slice(1)
+
+const toPascalCase = (str) => str.replace(/(^\w|_\w)/g, (match) => match.replace('_', '').toUpperCase())
 
 const instantiateInstanceData = (obj) => {
   // New properties prefixed with `_m_` are created at instantiation.
@@ -139,7 +140,8 @@ async function generateJavascriptParser (ksyContent) {
           const value = ParserConstructor[name]
           return typeof value === 'object' && value !== null && typeof value._read !== 'function'
         })
-        return { ParserConstructor, enumNames }
+        const enumNameMap = new Map(enumNames.map(name => [toCamelCase(name), name]))
+        return { ParserConstructor, enumNameMap }
       } else {
         logger.error(parserName)
         return Promise.reject(new Error(`KaitaiStructCompiler output does not contain ${parserName}`))
@@ -147,38 +149,41 @@ async function generateJavascriptParser (ksyContent) {
     })
 }
 
-async function parseInputFile ({ ParserConstructor, enumNames }, binaryFile) {
+async function parseInputFile ({ ParserConstructor, enumNameMap }, binaryFile) {
   logger.parse(`${binaryFile}`)
-
   const inputBuffer = getBinaryBuffer(binaryFile)
   const parsed = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
 
   logger.populate(`${binaryFile}`)
-  processParsedData(parsed, ParserConstructor, enumNames)
+  processParsedData(parsed, ParserConstructor, enumNameMap)
 
   logger.extract(`${binaryFile}`)
   const data = extractParsedData(parsed, binaryFile)
   return data
 }
 
-async function processParsedData (data, ParserConstructor, enumNames) {
-  if (Array.isArray(data)) {
-    data.forEach(datum => processParsedData(datum, ParserConstructor, enumNames))
-  } else if (data !== null && typeof data === 'object') {
-    instantiateInstanceData(data)
-    // Populate enum value names and keep instance properties.
-    for (const key in data) {
+async function processParsedData (data, ParserConstructor, enumNameMap) {
+  const processObject = (obj) => {
+    instantiateInstanceData(obj)
+
+    for (const [key, value] of Object.entries(obj)) {
       if (key.startsWith('_') && !key.startsWith('_m_')) continue
-      const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1)
-      if (enumNames.includes(capitalizedKey)) {
-        const enumValues = ParserConstructor[capitalizedKey]
-        data[key] = { name: enumValues[data[key]], value: data[key] }
-      } else {
-        processParsedData(data[key], ParserConstructor, enumNames)
+      const enumKey = enumNameMap.get(key)
+      if (enumKey) {
+        const enumValues = ParserConstructor[enumKey]
+        obj[key] = { name: enumValues[value], value }
+      } else if (value !== null && typeof value === 'object') {
+        processParsedData(value, ParserConstructor, enumNameMap)
       }
     }
   }
-};
+
+  if (Array.isArray(data)) {
+    data.forEach(datum => processParsedData(datum, ParserConstructor, enumNameMap))
+  } else if (data !== null && typeof data === 'object') {
+    processObject(data)
+  }
+}
 
 async function exportToJson (parsedData, jsonFile, format = false) {
   const stringifyStream = new JsonStreamStringify(parsedData, removeNullChars, format ? 2 : 0)
@@ -226,7 +231,7 @@ async function exportToJson (parsedData, jsonFile, format = false) {
 
     if (binaryFile) {
       await generateJavascriptParser(ksyContent)
-        .then(({ ParserConstructor, enumNames }) => parseInputFile({ ParserConstructor, enumNames }, binaryFile))
+        .then(({ ParserConstructor, enumNameMap }) => parseInputFile({ ParserConstructor, enumNameMap }, binaryFile))
         .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
         .catch((error) => logger.error(`Skipped: ${error}`))
     } else {
