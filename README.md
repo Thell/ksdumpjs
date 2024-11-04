@@ -1,7 +1,7 @@
 # About
 
 Dumps all `<binary>` files to json using `<format>` files. It captures
-enum value names and instance values. It does not handle ksy imports.
+enum value names and instance values.
 
 **Why?** The Kaitai Struct Web IDE parsing and export to json choke on large
 files because of browser memory limits and the Kaitai Visualizer's `ksdump`
@@ -12,10 +12,28 @@ compiling and then writing out the parsers just to read them back in (which is
 why it doesn't handle ksy imports).
 
 On a Ryzen 5700G it is capable of parsing a 165MB binary file using a format
-consisting of 200+ `id` fields having nested types and instanced values in ~4s
-and writing out the 666MB compact json on a 980 Pro SSD in ~30s and formatting
-to a 1.11GB file in ~78s.
+consisting of 200+ `id` fields having nested types and instanced values in ~3s
+and writing out the 682MB compact json on a 980 Pro SSD in ~32s and formatting
+to a 1.12GB file in ~37s.
 
+## Example
+
+```
+  node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons --format
+►  ksdump                            Initialized timer...
+
+Processing:                       .\test\formats\zip.ksy
+⚙️  Generating:                       Zip
+  -> Importing common/dos_datetime
+     Parsing common/dos_datetime
+🔍  Parsing binary:                   .\test\samples\sample1.zip
+🔍  Populating enum/instance values:  .\test\samples\sample1.zip
+📤  Extracting parsed data:           .\test\samples\sample1.zip
+📤  Exporting:                        jsons\sample1.json
+✅  Success                           jsons\sample1.json
+
+[█] ksdump                            Timer run for: 128ms
+```
 
 ## Usage
 
