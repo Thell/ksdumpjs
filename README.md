@@ -42,7 +42,7 @@ Processing:                       .\test\formats\zip.ksy
 
 ## Usage
 
-Usage: `npm install && node ksdump <format> <input> <outpath> [--format]`
+Usage: `npm install && node ksdump <format> <binary> <outpath> [--format]`
 
 The binary filename associated with a format is taken from the format's meta
 fields as `${id}.${file-extension}`.
