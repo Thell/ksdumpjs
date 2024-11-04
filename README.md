@@ -1,20 +1,25 @@
 # About
 
-Dumps all `<binary>` files to json using `<format>` files. It captures
-enum value names and instance values.
+Dumps all `<binary>` files to json using `<format>` files.
+
+It captures enum value names, instance values and imported formats. I am sure
+it does not cover even a minor portion of Kaitai Struct's format features but it
+should work for most formats.
+
+Once you have a working format for your data (and perhaps are still left with
+'unknowns') this makes it a breeze to import that data into a spreadsheet for
+formatted exploration and filtering, or pretty much any other analysis tool.
 
 **Why?** The Kaitai Struct Web IDE parsing and export to json choke on large
 files because of browser memory limits and the Kaitai Visualizer's `ksdump`
 chokes on some of my formats that otherwise are compiled and iterated over just
-fine using python or javascript. `ksdump.js` uses `json-stream-stringify` to
-avoid maximum string length limits and uses `require-from-string` instead of
-compiling and then writing out the parsers just to read them back in (which is
-why it doesn't handle ksy imports).
+fine using python or javascript. This project uses `json-stream-stringify` to
+avoid maximum string length limits.
 
 On a Ryzen 5700G it is capable of parsing a 165MB binary file using a format
 consisting of 200+ `id` fields having nested types and instanced values in ~3s
-and writing out the 682MB compact json on a 980 Pro SSD in ~32s and formatting
-to a 1.12GB file in ~37s.
+and writing out the 682MB compact json on a 980 Pro SSD in ~32s and the
+formatted 1.12GB output in ~37s.
 
 ## Example
 
