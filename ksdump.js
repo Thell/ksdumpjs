@@ -1,11 +1,11 @@
-const fs = require('fs')
-const fsPromises = require('fs').promises
-const path = require('path')
-const { JsonStreamStringify } = require('json-stream-stringify')
-const KaitaiStruct = require('kaitai-struct')
-const KaitaiStructCompiler = require('kaitai-struct-compiler')
-const signalePkg = require('signale')
-const yaml = require('yaml')
+import fs from 'fs'
+import path from 'path'
+import { JsonStreamStringify } from 'json-stream-stringify'
+import KaitaiStruct from 'kaitai-struct'
+import KaitaiStructCompiler from 'kaitai-struct-compiler'
+import signalePkg from 'signale'
+import vm from 'vm'
+import yaml from 'yaml'
 
 const { Signale } = signalePkg
 const logger = new Signale({
@@ -127,61 +127,99 @@ const extractParsedData = (data) => {
   return data
 }
 
-const yamlImporter = {
-  importYaml: function (name, mode) {
-    console.log("  -> Import yaml called with name '" + name + "' and mode '" + mode + "'.")
-    console.log(`parsing ${'test/formats/' + name + '.ksy'}`)
-    const importFileBuffer = fs.readFileSync('test/formats/' + name + '.ksy', 'utf8')
-    const importKsyContent = yaml.parse(importFileBuffer)
-    return Promise.resolve(importKsyContent)
+function createKaitaiLoader (parsersDir) {
+  return function kaitaiLoader (moduleName) {
+    if (moduleName === 'kaitai-struct/KaitaiStream') {
+      return KaitaiStruct.KaitaiStream
+    }
+
+    const exportName = moduleName.split('/').pop()
+    const modulePath = path.join(parsersDir, `${exportName}.js`)
+    if (fs.existsSync(modulePath)) {
+      const moduleContent = fs.readFileSync(modulePath, 'utf8')
+      const modifiedContent = `${moduleContent}\n\nmodule.exports = typeof ${exportName} !== 'undefined' ? ${exportName} : {};`
+
+      const moduleSandbox = { module: {}, exports: {}, require: createKaitaiLoader(parsersDir) }
+      const moduleScript = new vm.Script(modifiedContent, { filename: modulePath })
+      vm.createContext(moduleSandbox)
+      moduleScript.runInContext(moduleSandbox)
+      return moduleSandbox.exports
+    }
+
+    throw new Error(`Module '${moduleName}' not found`)
   }
 }
 
-async function generateJavascriptParser (ksyContent) {
-  logger.generate(`${ksyContent.meta.id}`)
+function loadParser (parserModuleName, parsersDir) {
+  const kaitaiLoader = createKaitaiLoader(parsersDir)
+  const exportName = parserModuleName.slice(0, -3)
+  const parserPath = path.join(parsersDir, parserModuleName)
+  const parserContent = fs.readFileSync(parserPath, 'utf8')
+  const modifiedParserContent = `${parserContent}\n\nmodule.exports = typeof ${exportName} !== 'undefined' ? ${exportName} : {};`
 
-  const parserName = `${toPascalCase(ksyContent.meta.id)}.js`
-  const compiledFiles = await KaitaiStructCompiler.compile('javascript', ksyContent, yamlImporter)
+  const parserSandbox = { module: {}, exports: {}, require: kaitaiLoader }
+  const parserScript = new vm.Script(modifiedParserContent, { filename: parserPath })
+  vm.createContext(parserSandbox)
+  parserScript.runInContext(parserSandbox)
 
-  const tempDir = './parsers'
-  await fsPromises.mkdir(tempDir, { recursive: true })
+  const exports = parserSandbox.exports
+  const parserKey = Object.keys(exports).find(key => key.toLowerCase() === exportName.toLowerCase())
+  return exports[parserKey]
+}
 
-  let ParserConstructor
-  let enumNameMap = new Map()
-  for (const [fileName, fileContent] of Object.entries(compiledFiles)) {
-    try {
-      const filePath = path.join(tempDir, fileName)
-      await fsPromises.writeFile(filePath, fileContent, 'utf8')
-
-      if (fileName === parserName) {
-        const importedModule = require(path.resolve(filePath))
-        ParserConstructor = importedModule[parserName.slice(0, -3)]
-
-        const enumNames = Object.getOwnPropertyNames(ParserConstructor).filter((name) => {
-          const value = ParserConstructor[name]
-          return typeof value === 'object' && value !== null && typeof value._read !== 'function'
-        })
-        enumNameMap = new Map(enumNames.map(name => [toCamelCase(name), name]))
-      }
-    } catch (error) {
-      logger.error(parserName)
-      console.error('Error during import:', error)
-      throw error
+async function compileParser (ksyContent, formatsDir) {
+  const yamlImporter = {
+    importYaml: function (name, mode) {
+      logger.log(`  -> Importing ${name}`)
+      logger.log(`     Parsing ${name}`)
+      const importFileBuffer = fs.readFileSync(path.join(formatsDir, name + '.ksy'), 'utf8')
+      const importKsyContent = yaml.parse(importFileBuffer)
+      return Promise.resolve(importKsyContent)
     }
   }
+  return KaitaiStructCompiler.compile('javascript', ksyContent, yamlImporter, false)
+}
+
+async function generateParser (ksyContent, formatsDir) {
+  const parserModuleName = `${toPascalCase(ksyContent.meta.id)}.js`
+  logger.generate(`${parserModuleName.slice(0, -3)}`)
+
+  const parsersDir = './parsers' // TODO: make this a cli option where if not defined uses a tmpdir
+  fs.mkdirSync(parsersDir, { recursive: true })
+
+  const compiledFiles = await compileParser(ksyContent, formatsDir)
+  for (const [fileName, fileContent] of Object.entries(compiledFiles)) {
+    const filePath = path.join(parsersDir, fileName)
+    fs.writeFileSync(filePath, fileContent)
+  }
+  const ParserConstructor = loadParser(parserModuleName, parsersDir)
+
+  // Extract enum names if they exist
+  const enumNames = Object.getOwnPropertyNames(ParserConstructor).filter((name) => {
+    const value = ParserConstructor[name]
+    return typeof value === 'object' && value !== null && typeof value._read !== 'function'
+  })
+  const enumNameMap = new Map(enumNames.map(name => [toCamelCase(name), name]))
 
   if (ParserConstructor) {
     return { ParserConstructor, enumNameMap }
   } else {
-    logger.error(parserName)
-    throw new Error(`KaitaiStructCompiler output does not contain ${parserName}`)
+    logger.error(`${parserModuleName.slice(0, -3)}`)
+    throw new Error(`KaitaiStructCompiler output does not contain ${parserModuleName}`)
   }
 }
 
 async function parseInputFile ({ ParserConstructor, enumNameMap }, binaryFile) {
   logger.parse(`${binaryFile}`)
   const inputBuffer = getBinaryBuffer(binaryFile)
-  const parsed = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
+  let parsed = ParserConstructor
+  try {
+    parsed = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
+  } catch (error) {
+    logger.error(`${binaryFile}`)
+    console.error('Error during parsing:', error)
+    throw error
+  }
 
   logger.populate(`${binaryFile}`)
   processParsedData(parsed, ParserConstructor, enumNameMap)
@@ -235,14 +273,14 @@ async function exportToJson (parsedData, jsonFile, format = false) {
 
 (async function main () {
   logger.time('ksdump')
-  console.log()
+  logger.log()
 
   if (process.argv.length < 5) {
     console.log('Usage: node ksdump <format> <input> <outpath> [--format]')
     return
   }
 
-  const [, , formatPath, inputPath, outputPath, formatFlag] = process.argv
+  const [, , formatPath, inputPath, outPath, formatFlag] = process.argv
   const formatOption = formatFlag === '--format'
   const parseYAML = (yamlFile) => yaml.parse(fs.readFileSync(yamlFile, 'utf-8'))
 
@@ -250,24 +288,24 @@ async function exportToJson (parsedData, jsonFile, format = false) {
     ? fs.readdirSync(formatPath).filter(file => file.endsWith('.ksy')).map(file => path.join(formatPath, file))
     : [formatPath]
 
-  for (const ksyFile of formatFiles) {
-    logger.process(`${ksyFile}`)
+  for (const formatFile of formatFiles) {
+    logger.process(`${formatFile}`)
 
-    const ksyContent = await parseYAML(ksyFile)
+    const ksyContent = await parseYAML(formatFile)
     const binaryFile = await getBinaryFile(inputPath, ksyContent)
     const outFile = `${fs.statSync(formatPath).isDirectory() ? ksyContent.meta.id : getFilestem(binaryFile)}.json`
-    const outputFilePath = path.join(outputPath, outFile)
+    const outputFilePath = path.join(outPath, outFile)
 
     if (binaryFile) {
-      await generateJavascriptParser(ksyContent)
+      await generateParser(ksyContent, path.dirname(formatPath))
         .then(({ ParserConstructor, enumNameMap }) => parseInputFile({ ParserConstructor, enumNameMap }, binaryFile))
         .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
         .catch((error) => logger.error(`Skipped: ${error}`))
     } else {
-      logger.skip(`${ksyContent.meta.id}.${ksyContent.meta['file-extension']} not found for format ${path.basename(ksyFile)}.`)
+      logger.skip(`${ksyContent.meta.id}.${ksyContent.meta['file-extension']} not found for ${path.basename(formatFile)}`)
     }
   }
 
-  console.log()
+  logger.log()
   logger.timeEnd('ksdump')
 })()
