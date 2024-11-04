@@ -64,7 +64,4 @@ associated filename is searched for in `${binary}`.
 The json filename will be taken from the format's meta field as `${id}.json`
 unless `<binary>` is a file, in which case it will be `${binary_stem}.json`.
 
-Output is 'compact' by default, `--format` invokes `jq` to format. `jq` is
-provided by `node-jq` and is located at `./node_modules/node-jq/bin/jq.exe`.
-With `--format` a tmp file is created and `jq` is called equivalently to
-`jq '.' tmp.json > formatted.json`.
+Output is 'compact' by default, `--format` uses 2 space indents for structure.
