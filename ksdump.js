@@ -337,10 +337,9 @@ async function exportToJson (parsedData, jsonFile, format = false) {
 
     const ksyContent = await parseYAML(formatFile)
     const binaryFile = await getBinaryFile(binaryPath, ksyContent)
-    const outFile = `${fs.statSync(formatPath).isDirectory() ? ksyContent.meta.id : getFilestem(binaryFile)}.json`
-    const outputFilePath = path.join(outPath, outFile)
-
     if (binaryFile) {
+      const outFile = `${fs.statSync(formatPath).isDirectory() ? ksyContent.meta.id : getFilestem(binaryFile)}.json`
+      const outputFilePath = path.join(outPath, outFile)
       await generateParser(ksyContent, path.dirname(formatPath))
         .then(({ ParserConstructor, enumsMap }) => parseInputFile({ ParserConstructor, enumsMap }, binaryFile))
         .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
