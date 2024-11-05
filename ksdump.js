@@ -8,54 +8,64 @@ import vm from 'vm'
 import yaml from 'yaml'
 
 const { Signale } = signalePkg
-const logger = new Signale({
+let logger = new Signale()
+const loggerOptions = {
   types: {
     export: {
       badge: '📤',
       label: 'Exporting:',
-      color: 'cyan'
+      color: 'cyan',
+      logLevel: 'info'
     },
     extract: {
       badge: '📤',
       label: 'Extracting parsed data:',
-      color: 'cyan'
+      color: 'cyan',
+      logLevel: 'info'
     },
     generate: {
       badge: '⚙️',
       label: 'Generating:',
-      color: 'cyan'
+      color: 'cyan',
+      logLevel: 'info'
     },
     parse: {
       badge: '🔍',
       label: 'Parsing binary:',
-      color: 'cyan'
+      color: 'cyan',
+      logLevel: 'info'
     },
     populate: {
       badge: '🔍',
       label: 'Populating enum/instance values:',
-      color: 'cyan'
+      color: 'cyan',
+      logLevel: 'info'
     },
     process: {
       label: 'Processing:',
-      color: 'cyan'
+      color: 'cyan',
+      logLevel: 'info'
     },
     skip: {
       badge: '⤵️',
       label: 'Skipping:',
-      color: 'yellow'
+      color: 'yellow',
+      logLevel: 'warn'
     },
     success: {
       badge: '✅',
       label: 'Success',
-      color: 'green'
+      color: 'green',
+      logLevel: 'info'
     },
     error: {
       badge: '❌',
       label: 'Error',
-      color: 'red'
+      color: 'red',
+      logLevel: 'error'
     }
   }
-})
+}
 
 const findBinaryFile = (directory, filename) => {
   const files = fs.readdirSync(directory, { withFileTypes: true })
@@ -272,13 +282,16 @@ async function exportToJson (parsedData, jsonFile, format = false) {
 }
 
 (async function main () {
-  logger.time('ksdump')
-  logger.log()
-
   if (process.argv.length < 5) {
     console.log('Usage: node ksdump <format> <input> <outpath> [--format]')
     return
   }
+
+  const loggerConfig = loggerOptions
+  loggerConfig.logLevel = 'info' // TODO: make this a cli arg
+  logger = new Signale(loggerConfig)
+  logger.time('ksdump')
+  logger.log()
 
   const [, , formatPath, inputPath, outPath, formatFlag] = process.argv
   const formatOption = formatFlag === '--format'
