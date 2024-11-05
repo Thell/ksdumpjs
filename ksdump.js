@@ -136,7 +136,12 @@ function traverseKsyContent (ksyContent) {
       if (key === 'enums' && typeof value === 'object') {
         for (const [enumName, enumValues] of Object.entries(value)) {
           const upperEnumValues = Object.fromEntries(
-            Object.entries(enumValues).map(([k, v]) => [k, v.toUpperCase()])
+            Object.entries(enumValues).map(([k, v]) => {
+              if (typeof v === 'object' && v !== null && 'id' in v) {
+                return [k, v.id.toUpperCase()]
+              }
+              return [k, v.toUpperCase()]
+            })
           )
           enumsNameMap.set(enumName, upperEnumValues)
         }
