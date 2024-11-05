@@ -104,7 +104,9 @@ const removeNullChars = (key, value) => {
   return typeof value === 'string' ? value.replace(new RegExp(nullChar, 'g'), '') : value
 }
 
-const toCamelCase = (str) => str.charAt(0).toLowerCase() + str.slice(1)
+function snakeToCamel (str) {
+  return str.replace(/_([a-z])/g, (match, group1) => group1.toUpperCase())
+}
 
 const toPascalCase = (str) => str.replace(/(^\w|_\w)/g, (match) => match.replace('_', '').toUpperCase())
 
@@ -118,6 +120,37 @@ const instantiateInstanceData = (obj) => {
       }
     })
   }
+}
+
+function traverseKsyContent (ksyContent) {
+  const enumsNameMap = new Map()
+  const fieldEnumMap = new Map()
+
+  function traverse (obj, currentPath = '') {
+    if (typeof obj !== 'object' || obj === null) return
+
+    for (const key in obj) {
+      const newPath = currentPath ? `${currentPath}::${key}` : key
+      const value = obj[key]
+
+      if (key === 'enums' && typeof value === 'object') {
+        for (const [enumName, enumValues] of Object.entries(value)) {
+          const upperEnumValues = Object.fromEntries(
+            Object.entries(enumValues).map(([k, v]) => [k, v.toUpperCase()])
+          )
+          enumsNameMap.set(enumName, upperEnumValues)
+        }
+      } else if (key === 'enum' && typeof value === 'string') {
+        const fieldName = obj.id || currentPath.split('::').pop()
+        fieldEnumMap.set(snakeToCamel(fieldName), value)
+      } else {
+        traverse(value, newPath)
+      }
+    }
+  }
+
+  traverse(ksyContent)
+  return { enumsNameMap, fieldEnumMap }
 }
 
 const extractParsedData = (data) => {
@@ -203,23 +236,17 @@ async function generateParser (ksyContent, formatsDir) {
     fs.writeFileSync(filePath, fileContent)
   }
   const ParserConstructor = loadParser(parserModuleName, parsersDir)
-
-  // Extract enum names if they exist
-  const enumNames = Object.getOwnPropertyNames(ParserConstructor).filter((name) => {
-    const value = ParserConstructor[name]
-    return typeof value === 'object' && value !== null && typeof value._read !== 'function'
-  })
-  const enumNameMap = new Map(enumNames.map(name => [toCamelCase(name), name]))
+  const enumsMap = traverseKsyContent(ksyContent)
 
   if (ParserConstructor) {
-    return { ParserConstructor, enumNameMap }
+    return { ParserConstructor, enumsMap }
   } else {
     logger.error(`${parserModuleName.slice(0, -3)}`)
     throw new Error(`KaitaiStructCompiler output does not contain ${parserModuleName}`)
   }
 }
 
-async function parseInputFile ({ ParserConstructor, enumNameMap }, binaryFile) {
+async function parseInputFile ({ ParserConstructor, enumsMap }, binaryFile) {
   logger.parse(`${binaryFile}`)
   const inputBuffer = getBinaryBuffer(binaryFile)
   let parsed = ParserConstructor
@@ -232,31 +259,35 @@ async function parseInputFile ({ ParserConstructor, enumNameMap }, binaryFile) {
   }
 
   logger.populate(`${binaryFile}`)
-  processParsedData(parsed, ParserConstructor, enumNameMap)
+  processParsedData(parsed, ParserConstructor, enumsMap)
 
   logger.extract(`${binaryFile}`)
   const data = extractParsedData(parsed, binaryFile)
   return data
 }
 
-async function processParsedData (data, ParserConstructor, enumNameMap) {
+async function processParsedData (data, ParserConstructor, enumsMap) {
+  const { enumsNameMap, fieldEnumMap } = enumsMap
+
   const processObject = (obj) => {
     instantiateInstanceData(obj)
 
     for (const [key, value] of Object.entries(obj)) {
       if (key.startsWith('_') && !key.startsWith('_m_')) continue
-      const enumKey = enumNameMap.get(key)
+
+      const normalizedKey = key.startsWith('_m_') ? key.slice(3) : key
+      const enumKey = fieldEnumMap.get(normalizedKey)
       if (enumKey) {
-        const enumValues = ParserConstructor[enumKey]
+        const enumValues = enumsNameMap.get(enumKey)
         obj[key] = { name: enumValues[value], value }
       } else if (value !== null && typeof value === 'object') {
-        processParsedData(value, ParserConstructor, enumNameMap)
+        processParsedData(value, ParserConstructor, enumsMap)
       }
     }
   }
 
   if (Array.isArray(data)) {
-    data.forEach(datum => processParsedData(datum, ParserConstructor, enumNameMap))
+    data.forEach(datum => processParsedData(datum, ParserConstructor, enumsMap))
   } else if (data !== null && typeof data === 'object') {
     processObject(data)
   }
@@ -311,7 +342,7 @@ async function exportToJson (parsedData, jsonFile, format = false) {
 
     if (binaryFile) {
       await generateParser(ksyContent, path.dirname(formatPath))
-        .then(({ ParserConstructor, enumNameMap }) => parseInputFile({ ParserConstructor, enumNameMap }, binaryFile))
+        .then(({ ParserConstructor, enumsMap }) => parseInputFile({ ParserConstructor, enumsMap }, binaryFile))
         .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
         .catch((error) => logger.error(`Skipped: ${error}`))
     } else {
