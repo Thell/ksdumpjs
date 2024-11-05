@@ -24,7 +24,7 @@ formatted 1.12GB output in ~37s.
 ## Example
 
 ```
-  node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons --format
+ node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons --format
 ►  ksdump                            Initialized timer...
 
 Processing:                       .\test\formats\zip.ksy
@@ -63,5 +63,3 @@ associated filename is searched for in `${binary}`.
 
 The json filename will be taken from the format's meta field as `${id}.json`
 unless `<binary>` is a file, in which case it will be `${binary_stem}.json`.
-
-Output is 'compact' by default, `--format` uses 2 space indents for structure.

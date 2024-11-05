@@ -153,21 +153,60 @@ function traverseKsyContent (ksyContent) {
   return { enumsNameMap, fieldEnumMap }
 }
 
-const extractParsedData = (data) => {
-  if (Array.isArray(data)) {
-    return data.map(extractParsedData)
-  } else if (data !== null && typeof data === 'object') {
-    return Object.keys(data).reduce((acc, key) => {
-      if (key.startsWith('_m_')) {
-        // Promote instance property to a properly named property.
-        acc[key.slice(3)] = extractParsedData(data[key])
-      } else if (!key.startsWith('_')) {
-        acc[key] = extractParsedData(data[key])
-      }
-      return acc
-    }, {})
+class ObjectType {
+  static Primitive = 'Primitive'
+  static Array = 'Array'
+  static TypedArray = 'TypedArray'
+  static Object = 'Object'
+  static Undefined = 'Undefined'
+}
+
+function isUndef (obj) {
+  return typeof obj === 'undefined'
+}
+
+function getObjectType (obj) {
+  if (obj instanceof Uint8Array) {
+    return ObjectType.TypedArray
+  } else if (obj === null || typeof obj !== 'object') {
+    return isUndef(obj) ? ObjectType.Undefined : ObjectType.Primitive
+  } else if (Array.isArray(obj)) {
+    return ObjectType.Array
+  } else {
+    return ObjectType.Object
   }
-  return data
+}
+
+function extractParsedData (value) {
+  if (value === null || value === undefined) return value
+
+  switch (getObjectType(value)) {
+    case ObjectType.Primitive:
+      return value
+
+    case ObjectType.Array:
+      return value.map(item => extractParsedData(item))
+
+    case ObjectType.TypedArray:
+      // To hex or not to hex... that is the question.
+      // return Array.from(value).map(byte => `${byte.toString(16).padStart(2, '0')}`)
+      return Array.from(value)
+
+    case ObjectType.Object: {
+      return Object.keys(value).reduce((acc, key) => {
+        if (key.startsWith('_m_')) {
+          // Promote instance property to a properly named property.
+          acc[key.slice(3)] = extractParsedData(value[key])
+        } else if (!key.startsWith('_')) {
+          acc[key] = extractParsedData(value[key])
+        }
+        return acc
+      }, {})
+    }
+
+    default:
+      return value
+  }
 }
 
 function createKaitaiLoader (parsersDir) {
