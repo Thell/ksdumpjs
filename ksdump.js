@@ -81,11 +81,11 @@ const findBinaryFile = (directory, filename) => {
   return null
 }
 
-const getBinaryFile = async (inputPath, ksyContent) => {
+const getBinaryFile = async (binaryPath, ksyContent) => {
   const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta['file-extension']}`
-  return fs.statSync(inputPath).isDirectory()
-    ? findBinaryFile(inputPath, binaryFilename)
-    : inputPath
+  return fs.statSync(binaryPath).isDirectory()
+    ? findBinaryFile(binaryPath, binaryFilename)
+    : binaryPath
 }
 
 const getBinaryBuffer = (binaryFile) => {
@@ -314,7 +314,7 @@ async function exportToJson (parsedData, jsonFile, format = false) {
 
 (async function main () {
   if (process.argv.length < 5) {
-    console.log('Usage: node ksdump <format> <input> <outpath> [--format]')
+    console.log('Usage: node ksdump <format> <binary> <outpath> [--format]')
     return
   }
 
@@ -324,7 +324,7 @@ async function exportToJson (parsedData, jsonFile, format = false) {
   logger.time('ksdump')
   logger.log()
 
-  const [, , formatPath, inputPath, outPath, formatFlag] = process.argv
+  const [, , formatPath, binaryPath, outPath, formatFlag] = process.argv
   const formatOption = formatFlag === '--format'
   const parseYAML = (yamlFile) => yaml.parse(fs.readFileSync(yamlFile, 'utf-8'))
 
@@ -336,7 +336,7 @@ async function exportToJson (parsedData, jsonFile, format = false) {
     logger.process(`${formatFile}`)
 
     const ksyContent = await parseYAML(formatFile)
-    const binaryFile = await getBinaryFile(inputPath, ksyContent)
+    const binaryFile = await getBinaryFile(binaryPath, ksyContent)
     const outFile = `${fs.statSync(formatPath).isDirectory() ? ksyContent.meta.id : getFilestem(binaryFile)}.json`
     const outputFilePath = path.join(outPath, outFile)
 
