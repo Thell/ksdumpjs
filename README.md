@@ -25,19 +25,27 @@ formatted 1GB output in ~30s.
 
 ```
  node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons --format
-►  ksdump                            Initialized timer...
+►  ksdump           Initialized timer...
 
-Processing:                       .\test\formats\zip.ksy
-⚙️  Generating:                       Zip
+Processing:      .\test\formats\zip.ksy
+⚙️  Generating:      Zip
   -> Importing common/dos_datetime
      Parsing common/dos_datetime
-🔍  Parsing binary:                   .\test\samples\sample1.zip
-🔍  Populating enum/instance values:  .\test\samples\sample1.zip
-📤  Extracting parsed data:           .\test\samples\sample1.zip
-📤  Exporting:                        jsons\sample1.json
-✅  Success                           jsons\sample1.json
+🔍  Parsing binary:  .\test\samples\sample1.zip
+📤  Transforming:    .\test\samples\sample1.zip
+📤  Exporting:       jsons\sample1.json
+✅  Success          jsons\sample1.json
 
-[█] ksdump                            Timer run for: 128ms
+[█] ksdump           Timer run for: 128ms
+```
+
+Verify correctness against Kaitai Struct Web-IDE exported json:
+```ps
+ ./jq -b -S . .\jsons\sample1.json > sorted_sample1.json
+ ./jq -b -S . check_sample1.json > sorted_check_sample1.json
+ git diff --no-index -b sorted_sample1.json sorted_check_sample1.json
+ $?
+True
 ```
 
 ## Usage
