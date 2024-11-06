@@ -43,7 +43,7 @@ Verify correctness against Kaitai Struct Web-IDE exported json:
 ```ps
 > ./jq -b -S . .\jsons\sample1.json > sorted_sample1.json
 > ./jq -b -S . check_sample1.json > sorted_check_sample1.json
-> git diff --no-index -b sorted_sample1.json sorted_check_sample1.json
+> git diff --no-index sorted_sample1.json sorted_check_sample1.json
 > $?
 True
 ```
