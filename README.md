@@ -18,8 +18,8 @@ avoid maximum string length limits.
 
 On a Ryzen 5700G it is capable of parsing a 165MB binary file using a format
 consisting of 200+ `id` fields having nested types and instanced values in ~3s
-and writing out the 682MB compact json on a 980 Pro SSD in ~32s and the
-formatted 1.12GB output in ~37s.
+and writing out the 614MB compact json on a 980 Pro SSD in ~25s and the
+formatted 1GB output in ~30s.
 
 ## Example
 
