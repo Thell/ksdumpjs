@@ -17,9 +17,9 @@ const loggerOptions = {
       color: 'cyan',
       logLevel: 'info'
     },
-    extract: {
+    transform: {
       badge: '📤',
-      label: 'Extracting parsed data:',
+      label: 'Transforming:',
       color: 'cyan',
       logLevel: 'info'
     },
@@ -32,12 +32,6 @@ const loggerOptions = {
     parse: {
       badge: '🔍',
       label: 'Parsing binary:',
-      color: 'cyan',
-      logLevel: 'info'
-    },
-    populate: {
-      badge: '🔍',
-      label: 'Populating enum/instance values:',
       color: 'cyan',
       logLevel: 'info'
     },
@@ -117,7 +111,7 @@ const instantiateInstanceData = (obj) => {
   }
 }
 
-function traverseKsyContent (ksyContent) {
+function extractKsyEnumsMappings (ksyContent) {
   const enumsNameMap = new Map()
   const fieldEnumMap = new Map()
 
@@ -174,38 +168,6 @@ function getObjectType (obj) {
     return ObjectType.Array
   } else {
     return ObjectType.Object
-  }
-}
-
-function extractParsedData (value) {
-  if (value === null || value === undefined) return value
-
-  switch (getObjectType(value)) {
-    case ObjectType.Primitive:
-      return value
-
-    case ObjectType.Array:
-      return value.map(item => extractParsedData(item))
-
-    case ObjectType.TypedArray:
-      // To hex or not to hex... that is the question.
-      // return Array.from(value).map(byte => `${byte.toString(16).padStart(2, '0')}`)
-      return Array.from(value)
-
-    case ObjectType.Object: {
-      return Object.keys(value).reduce((acc, key) => {
-        if (key.startsWith('_m_')) {
-          // Promote instance property to a properly named property.
-          acc[key.slice(3)] = extractParsedData(value[key])
-        } else if (!key.startsWith('_')) {
-          acc[key] = extractParsedData(value[key])
-        }
-        return acc
-      }, {})
-    }
-
-    default:
-      return value
   }
 }
 
@@ -275,7 +237,7 @@ async function generateParser (ksyContent, formatsDir) {
     fs.writeFileSync(filePath, fileContent)
   }
   const ParserConstructor = loadParser(parserModuleName, parsersDir)
-  const enumsMap = traverseKsyContent(ksyContent)
+  const enumsMap = extractKsyEnumsMappings(ksyContent)
 
   if (ParserConstructor) {
     return { ParserConstructor, enumsMap }
@@ -287,51 +249,21 @@ async function generateParser (ksyContent, formatsDir) {
 
 async function parseInputFile ({ ParserConstructor, enumsMap }, binaryFile) {
   logger.parse(`${binaryFile}`)
+
   const inputBuffer = getBinaryBuffer(binaryFile)
-  let parsed = ParserConstructor
+  let parsedData = ParserConstructor
   try {
-    parsed = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
+    parsedData = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
   } catch (error) {
     logger.error(`${binaryFile}`)
     console.error('Error during parsing:', error)
     throw error
   }
 
-  logger.populate(`${binaryFile}`)
-  processParsedData(parsed, ParserConstructor, enumsMap)
-
-  logger.extract(`${binaryFile}`)
-  const data = extractParsedData(parsed, binaryFile)
-  return data
+  return { parsedData, enumsMap }
 }
 
-async function processParsedData (data, ParserConstructor, enumsMap) {
-  const { enumsNameMap, fieldEnumMap } = enumsMap
-
-  const processObject = (obj) => {
-    instantiateInstanceData(obj)
-
-    for (const [key, value] of Object.entries(obj)) {
-      if (key.startsWith('_') && !key.startsWith('_m_')) continue
-
-      const normalizedKey = key.startsWith('_m_') ? key.slice(3) : key
-      const enumKey = fieldEnumMap.get(normalizedKey)
-      if (enumKey) {
-        const enumValues = enumsNameMap.get(enumKey)
-        obj[key] = { name: enumValues[value], value }
-      } else if (value !== null && typeof value === 'object') {
-        processParsedData(value, ParserConstructor, enumsMap)
-      }
-    }
-  }
-
-  if (Array.isArray(data)) {
-    data.forEach(datum => processParsedData(datum, ParserConstructor, enumsMap))
-  } else if (data !== null && typeof data === 'object') {
-    processObject(data)
-  }
-}
-
+async function exportToJson (extractedData, jsonFile, format = false) {
   const stringifyStream = new JsonStreamStringify(extractedData, undefined, format ? 2 : 0)
   const outputStream = fs.createWriteStream(jsonFile)
 
@@ -350,6 +282,52 @@ async function processParsedData (data, ParserConstructor, enumsMap) {
   })
 }
 
+async function transformParsedData ({ parsedData, enumsMap }, binaryFile) {
+  logger.transform(`${binaryFile}`)
+  const { enumsNameMap, fieldEnumMap } = enumsMap
+
+  function transform (value) {
+    if (value === null || value === undefined) return value
+
+    switch (getObjectType(value)) {
+      case ObjectType.Primitive:
+        return value
+
+      case ObjectType.Array:
+        return value.map(item => transform(item))
+
+      case ObjectType.TypedArray:
+        // To hex or not to hex... that is the question.
+        // return Array.from(value).map(byte => `${byte.toString(16).padStart(2, '0')}`)
+        return Array.from(value)
+
+      case ObjectType.Object: {
+        instantiateInstanceData(value)
+
+        return Object.keys(value).reduce((acc, key) => {
+          if (key.startsWith('_') && !key.startsWith('_m_')) return acc
+
+          const normalizedKey = key.startsWith('_m_') ? key.slice(3) : key
+          const enumKey = fieldEnumMap.get(normalizedKey)
+          if (enumKey) {
+            const enumValues = enumsNameMap.get(enumKey)
+            acc[normalizedKey] = { name: enumValues[value[key]], value: value[key] }
+          } else {
+            acc[normalizedKey] = transform(value[key])
+          }
+          return acc
+        }, {})
+      }
+
+      default:
+        return value
+    }
+  }
+
+  const transformedData = transform(parsedData)
+  return transformedData
+}
+
 (async function main () {
   if (process.argv.length < 5) {
     console.log('Usage: node ksdump <format> <binary> <outpath> [--format]')
@@ -358,6 +336,7 @@ async function processParsedData (data, ParserConstructor, enumsMap) {
 
   const loggerConfig = loggerOptions
   loggerConfig.logLevel = 'info' // TODO: make this a cli arg
+  // loggerConfig.interactive = true
   logger = new Signale(loggerConfig)
   logger.time('ksdump')
   logger.log()
@@ -380,7 +359,8 @@ async function processParsedData (data, ParserConstructor, enumsMap) {
       const outputFilePath = path.join(outPath, outFile)
       await generateParser(ksyContent, path.dirname(formatPath))
         .then(({ ParserConstructor, enumsMap }) => parseInputFile({ ParserConstructor, enumsMap }, binaryFile))
-        .then(parsedData => exportToJson(parsedData, outputFilePath, formatOption))
+        .then(({ parsedData, enumsMap }) => transformParsedData({ parsedData, enumsMap }, binaryFile))
+        .then(transformedData => exportToJson(transformedData, outputFilePath, formatOption))
         .catch((error) => logger.error(`Skipped: ${error}`))
     } else {
       logger.skip(`${ksyContent.meta.id}.${ksyContent.meta['file-extension']} not found for ${path.basename(formatFile)}`)
