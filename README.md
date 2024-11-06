@@ -24,7 +24,7 @@ formatted 1GB output in ~30s.
 ## Example
 
 ```
- node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons --format
+> node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons --format
 ►  ksdump           Initialized timer...
 
 Processing:      .\test\formats\zip.ksy
@@ -41,10 +41,10 @@ Processing:      .\test\formats\zip.ksy
 
 Verify correctness against Kaitai Struct Web-IDE exported json:
 ```ps
- ./jq -b -S . .\jsons\sample1.json > sorted_sample1.json
- ./jq -b -S . check_sample1.json > sorted_check_sample1.json
- git diff --no-index -b sorted_sample1.json sorted_check_sample1.json
- $?
+> ./jq -b -S . .\jsons\sample1.json > sorted_sample1.json
+> ./jq -b -S . check_sample1.json > sorted_check_sample1.json
+> git diff --no-index -b sorted_sample1.json sorted_check_sample1.json
+> $?
 True
 ```
 
