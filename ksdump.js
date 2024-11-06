@@ -99,11 +99,6 @@ const getFilestem = (filepath) => {
   return lastIndex > 0 ? filename.substring(0, lastIndex) : filename
 }
 
-const removeNullChars = (key, value) => {
-  const nullChar = String.fromCharCode(0)
-  return typeof value === 'string' ? value.replace(new RegExp(nullChar, 'g'), '') : value
-}
-
 function snakeToCamel (str) {
   return str.replace(/_([a-z])/g, (match, group1) => group1.toUpperCase())
 }
@@ -337,8 +332,7 @@ async function processParsedData (data, ParserConstructor, enumsMap) {
   }
 }
 
-async function exportToJson (parsedData, jsonFile, format = false) {
-  const stringifyStream = new JsonStreamStringify(parsedData, removeNullChars, format ? 2 : 0)
+  const stringifyStream = new JsonStreamStringify(extractedData, undefined, format ? 2 : 0)
   const outputStream = fs.createWriteStream(jsonFile)
 
   logger.export(`${jsonFile}`)
