@@ -8,7 +8,6 @@ import vm from 'vm'
 import yaml from 'yaml'
 
 const { Signale } = signalePkg
-let logger = new Signale()
 const loggerOptions = {
   types: {
     export: {
@@ -60,15 +59,16 @@ const loggerOptions = {
     }
   }
 }
+let logger = new Signale(loggerOptions)
 
-const findBinaryFile = (directory, filename) => {
+const findFile = (directory, filename) => {
   const files = fs.readdirSync(directory, { withFileTypes: true })
   for (const file of files) {
     const fullPath = path.join(directory, file.name)
     if (file.isFile() && file.name === filename) {
       return fullPath
     } else if (file.isDirectory()) {
-      const result = findBinaryFile(fullPath, filename)
+      const result = findFile(fullPath, filename)
       if (result) return result
     }
   }
@@ -78,81 +78,31 @@ const findBinaryFile = (directory, filename) => {
 const getBinaryFile = async (binaryPath, ksyContent) => {
   const binaryFilename = `${ksyContent.meta.id}.${ksyContent.meta['file-extension']}`
   return fs.statSync(binaryPath).isDirectory()
-    ? findBinaryFile(binaryPath, binaryFilename)
+    ? findFile(binaryPath, binaryFilename)
     : binaryPath
 }
 
-const getBinaryBuffer = (binaryFile) => {
-  const inputBinary = fs.readFileSync(binaryFile)
-  return Buffer.from(inputBinary)
-}
-
 const getFilestem = (filepath) => {
-  const filename = path.basename(filepath)
-  const lastIndex = filename.lastIndexOf('.')
-  return lastIndex > 0 ? filename.substring(0, lastIndex) : filename
+  const fileExt = path.extname(filepath)
+  return path.basename(filepath, fileExt)
 }
 
-function snakeToCamel (str) {
-  return str.replace(/_([a-z])/g, (match, group1) => group1.toUpperCase())
-}
-
+const snakeToCamel = (str) => str.replace(/_([a-z])/g, (match, group1) => group1.toUpperCase())
 const toPascalCase = (str) => str.replace(/(^\w|_\w)/g, (match) => match.replace('_', '').toUpperCase())
 
-function extractKsyEnumsMappings (ksyContent) {
-  const enumsNameMap = new Map()
-  const fieldEnumMap = new Map()
+const parseYAML = (yamlFile) => yaml.parse(fs.readFileSync(yamlFile, 'utf-8'))
 
-  function traverse (obj, currentPath = '') {
-    if (typeof obj !== 'object' || obj === null) return
-
-    for (const key in obj) {
-      const newPath = currentPath ? `${currentPath}::${key}` : key
-      const value = obj[key]
-
-      if (key === 'enums' && typeof value === 'object') {
-        for (const [enumName, enumValues] of Object.entries(value)) {
-          const upperEnumValues = Object.fromEntries(
-            Object.entries(enumValues).map(([k, v]) => {
-              if (typeof v === 'object' && v !== null && 'id' in v) {
-                return [k, v.id.toUpperCase()]
-              }
-              return [k, v.toUpperCase()]
-            })
-          )
-          enumsNameMap.set(enumName, upperEnumValues)
-        }
-      } else if (key === 'enum' && typeof value === 'string') {
-        const fieldName = obj.id || currentPath.split('::').pop()
-        fieldEnumMap.set(snakeToCamel(fieldName), value)
-      } else {
-        traverse(value, newPath)
-      }
+async function compileParser (ksyContent, formatsDir) {
+  const yamlImporter = {
+    importYaml: function (name, mode) {
+      logger.log(`  -> Importing ${name}`)
+      logger.log(`     Parsing ${name}`)
+      const importFileBuffer = fs.readFileSync(path.join(formatsDir, name + '.ksy'), 'utf8')
+      const importKsyContent = yaml.parse(importFileBuffer)
+      return Promise.resolve(importKsyContent)
     }
   }
-
-  traverse(ksyContent)
-  return { enumsNameMap, fieldEnumMap }
-}
-
-class ObjectType {
-  static Primitive = 'Primitive'
-  static Array = 'Array'
-  static TypedArray = 'TypedArray'
-  static Object = 'Object'
-  static Undefined = 'Undefined'
-}
-
-function getObjectType (obj) {
-  if (obj instanceof Uint8Array) {
-    return ObjectType.TypedArray
-  } else if (obj === null || typeof obj !== 'object') {
-    return obj === undefined ? ObjectType.Undefined : ObjectType.Primitive
-  } else if (Array.isArray(obj)) {
-    return ObjectType.Array
-  } else {
-    return ObjectType.Object
-  }
+  return KaitaiStructCompiler.compile('javascript', ksyContent, yamlImporter, false)
 }
 
 function createKaitaiLoader (parsersDir) {
@@ -195,23 +145,46 @@ function loadParser (parserModuleName, parsersDir) {
   return exports[parserKey]
 }
 
-async function compileParser (ksyContent, formatsDir) {
-  const yamlImporter = {
-    importYaml: function (name, mode) {
-      logger.log(`  -> Importing ${name}`)
-      logger.log(`     Parsing ${name}`)
-      const importFileBuffer = fs.readFileSync(path.join(formatsDir, name + '.ksy'), 'utf8')
-      const importKsyContent = yaml.parse(importFileBuffer)
-      return Promise.resolve(importKsyContent)
+function extractKsyEnumsMappings (ksyContent) {
+  const enumsNameMap = new Map()
+  const fieldEnumMap = new Map()
+
+  function traverse (obj, currentPath = '') {
+    if (typeof obj !== 'object' || obj === null) return
+
+    for (const key in obj) {
+      const newPath = currentPath ? `${currentPath}::${key}` : key
+      const value = obj[key]
+
+      if (key === 'enums' && typeof value === 'object') {
+        for (const [enumName, enumValues] of Object.entries(value)) {
+          const upperEnumValues = Object.fromEntries(
+            Object.entries(enumValues).map(([k, v]) => {
+              if (typeof v === 'object' && v !== null && 'id' in v) {
+                return [k, v.id.toUpperCase()]
+              }
+              return [k, v.toUpperCase()]
+            })
+          )
+          enumsNameMap.set(enumName, upperEnumValues)
+        }
+      } else if (key === 'enum' && typeof value === 'string') {
+        const fieldName = obj.id || currentPath.split('::').pop()
+        fieldEnumMap.set(snakeToCamel(fieldName), value)
+      } else {
+        traverse(value, newPath)
+      }
     }
   }
-  return KaitaiStructCompiler.compile('javascript', ksyContent, yamlImporter, false)
+
+  traverse(ksyContent)
+  return { enumsNameMap, fieldEnumMap }
 }
 
 async function generateParser (ksyContent, formatsDir) {
-  const parserModuleName = `${toPascalCase(ksyContent.meta.id)}.js`
-  logger.generate(`${parserModuleName.slice(0, -3)}`)
+  logger.generate(`${ksyContent.meta.id}`)
 
+  const parserModuleName = `${toPascalCase(ksyContent.meta.id)}.js`
   const parsersDir = './parsers' // TODO: make this a cli option where if not defined uses a tmpdir
   fs.mkdirSync(parsersDir, { recursive: true })
 
@@ -220,50 +193,48 @@ async function generateParser (ksyContent, formatsDir) {
     const filePath = path.join(parsersDir, fileName)
     fs.writeFileSync(filePath, fileContent)
   }
+
   const ParserConstructor = loadParser(parserModuleName, parsersDir)
   const enumsMap = extractKsyEnumsMappings(ksyContent)
 
   if (ParserConstructor) {
     return { ParserConstructor, enumsMap }
   } else {
-    logger.error(`${parserModuleName.slice(0, -3)}`)
+    logger.error(`${ksyContent.meta.id}}`)
     throw new Error(`KaitaiStructCompiler output does not contain ${parserModuleName}`)
+  }
+}
+
+class ObjectType {
+  static Primitive = 'Primitive'
+  static Array = 'Array'
+  static TypedArray = 'TypedArray'
+  static Object = 'Object'
+  static Undefined = 'Undefined'
+}
+
+function getObjectType (obj) {
+  if (obj instanceof Uint8Array) {
+    return ObjectType.TypedArray
+  } else if (obj === null || typeof obj !== 'object') {
+    return obj === undefined ? ObjectType.Undefined : ObjectType.Primitive
+  } else if (Array.isArray(obj)) {
+    return ObjectType.Array
+  } else {
+    return ObjectType.Object
   }
 }
 
 async function parseInputFile ({ ParserConstructor, enumsMap }, binaryFile) {
   logger.parse(`${binaryFile}`)
-
-  const inputBuffer = getBinaryBuffer(binaryFile)
-  let parsedData = ParserConstructor
   try {
-    parsedData = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
+    const inputBuffer = fs.readFileSync(binaryFile)
+    const parsedData = new ParserConstructor(new KaitaiStruct.KaitaiStream(inputBuffer, 0))
+    return { parsedData, enumsMap }
   } catch (error) {
     logger.error(`${binaryFile}`)
-    console.error('Error during parsing:', error)
     throw error
   }
-
-  return { parsedData, enumsMap }
-}
-
-async function exportToJson (extractedData, jsonFile, format = false) {
-  const stringifyStream = new JsonStreamStringify(extractedData, undefined, format ? 2 : 0)
-  const outputStream = fs.createWriteStream(jsonFile)
-
-  logger.export(`${jsonFile}`)
-  return new Promise((resolve, reject) => {
-    stringifyStream
-      .pipe(outputStream)
-      .on('finish', () => {
-        logger.success(`${jsonFile}`)
-        resolve()
-      })
-      .on('error', (error) => {
-        logger.error(`${jsonFile}`)
-        reject(error)
-      })
-  })
 }
 
 async function transformParsedData ({ parsedData, enumsMap }, binaryFile) {
@@ -281,8 +252,6 @@ async function transformParsedData ({ parsedData, enumsMap }, binaryFile) {
         return value.map(item => transform(item))
 
       case ObjectType.TypedArray:
-        // To hex or not to hex... that is the question.
-        // return Array.from(value).map(byte => `${byte.toString(16).padStart(2, '0')}`)
         return Array.from(value)
 
       case ObjectType.Object: {
@@ -317,6 +286,25 @@ async function transformParsedData ({ parsedData, enumsMap }, binaryFile) {
   return transformedData
 }
 
+async function exportToJson (extractedData, jsonFile, format = false) {
+  logger.export(`${jsonFile}`)
+
+  const stringifyStream = new JsonStreamStringify(extractedData, undefined, format ? 2 : 0)
+  const outputStream = fs.createWriteStream(jsonFile)
+  return new Promise((resolve, reject) => {
+    stringifyStream
+      .pipe(outputStream)
+      .on('finish', () => {
+        logger.success(`${jsonFile}`)
+        resolve()
+      })
+      .on('error', (error) => {
+        logger.error(`${jsonFile}`)
+        reject(error)
+      })
+  })
+}
+
 (async function main () {
   if (process.argv.length < 5) {
     console.log('Usage: node ksdump <format> <binary> <outpath> [--format]')
@@ -325,14 +313,13 @@ async function transformParsedData ({ parsedData, enumsMap }, binaryFile) {
 
   const loggerConfig = loggerOptions
   loggerConfig.logLevel = 'info' // TODO: make this a cli arg
-  // loggerConfig.interactive = true
+  loggerConfig.interactive = false
   logger = new Signale(loggerConfig)
   logger.time('ksdump')
   logger.log()
 
   const [, , formatPath, binaryPath, outPath, formatFlag] = process.argv
   const formatOption = formatFlag === '--format'
-  const parseYAML = (yamlFile) => yaml.parse(fs.readFileSync(yamlFile, 'utf-8'))
 
   const formatFiles = fs.statSync(formatPath).isDirectory()
     ? fs.readdirSync(formatPath).filter(file => file.endsWith('.ksy')).map(file => path.join(formatPath, file))
