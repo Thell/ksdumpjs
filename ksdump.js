@@ -99,18 +99,6 @@ function snakeToCamel (str) {
 
 const toPascalCase = (str) => str.replace(/(^\w|_\w)/g, (match) => match.replace('_', '').toUpperCase())
 
-const instantiateInstanceData = (obj) => {
-  // New properties prefixed with `_m_` are created at instantiation.
-  const prototype = Object.getPrototypeOf(obj)
-  if (prototype) {
-    Object.getOwnPropertyNames(prototype).forEach((prop) => {
-      if (!prop.startsWith('_') && obj[prop] !== undefined) {
-        // Intentionally empty to trigger instantiation side effect.
-      }
-    })
-  }
-}
-
 function extractKsyEnumsMappings (ksyContent) {
   const enumsNameMap = new Map()
   const fieldEnumMap = new Map()
@@ -302,9 +290,14 @@ async function transformParsedData ({ parsedData, enumsMap }, binaryFile) {
         return Array.from(value)
 
       case ObjectType.Object: {
-        instantiateInstanceData(value)
+        const prototype = Object.getPrototypeOf(value)
+        if (prototype) {
+          // Trigger instance instantiations.
+          Object.getOwnPropertyNames(prototype).forEach((prop) => value[prop])
+        }
 
         return Object.keys(value).reduce((acc, key) => {
+          // Instance instantiations begin with '_m_'
           if (key.startsWith('_') && !key.startsWith('_m_')) return acc
 
           const normalizedKey = key.startsWith('_m_') ? key.slice(3) : key
