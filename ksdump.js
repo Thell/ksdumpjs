@@ -286,10 +286,10 @@ async function transformParsedData ({ parsedData, enumsMap }, binaryFile) {
   return transformedData
 }
 
-async function exportToJson (extractedData, jsonFile, format = false) {
+async function exportToJson (transformedData, jsonFile, format = false) {
   logger.export(`${jsonFile}`)
 
-  const stringifyStream = new JsonStreamStringify(extractedData, undefined, format ? 2 : 0)
+  const stringifyStream = new JsonStreamStringify(transformedData, undefined, format ? 2 : 0)
   const outputStream = fs.createWriteStream(jsonFile)
   return new Promise((resolve, reject) => {
     stringifyStream
