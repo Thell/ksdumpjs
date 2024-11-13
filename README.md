@@ -1,3 +1,5 @@
+[![npm version](https://img.shields.io/npm/v/ksdumpjs.svg)](https://www.npmjs.com/package/ksdumpjs)
+
 # About
 
 This is a tool to dump binary files into JSON using Kaitai Struct formats.
