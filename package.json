@@ -1,7 +1,20 @@
 {
   "name": "ksdumpjs",
   "version": "1.0.0",
+  "homepage": "https://github.com/Thell/ksdumpjs#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Thell/ksdumpjs.git"
+  },
   "description": "Dump binary to json using format.",
+  "keywords": [
+    "kaitai",
+    "binary",
+    "json",
+    "parser",
+    "ksdump",
+    "kaitai-struct"
+  ],
   "main": "ksdump.js",
   "type": "module",
   "bin": {
