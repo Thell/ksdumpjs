@@ -2,6 +2,13 @@ import fs from 'fs'
 import path from 'path'
 import yaml from 'yaml'
 
+export function ensureDirectoryExistence (directory) {
+  const dirname = path.resolve(directory)
+  if (!fs.existsSync(dirname)) {
+    fs.mkdirSync(dirname, { recursive: true })
+  }
+}
+
 export function findFile (directory, filename) {
   const files = fs.readdirSync(directory, { withFileTypes: true })
   for (const file of files) {

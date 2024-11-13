@@ -5,7 +5,7 @@ import { JsonStreamStringify } from 'json-stream-stringify'
 import KaitaiStruct from 'kaitai-struct'
 import KaitaiStructCompiler from 'kaitai-struct-compiler'
 import vm from 'vm'
-import { snakeToCamel, toPascalCase, parseYAML, getBinaryFile, getFilestem } from './utils.js'
+import { snakeToCamel, toPascalCase, parseYAML, ensureDirectoryExistence, getBinaryFile, getFilestem } from './utils.js'
 import { Signale, loggerOptions } from './logger.js'
 
 let logger = new Signale(loggerOptions)
@@ -237,6 +237,8 @@ export default async function main ({ format: formatPath, binary: binaryPath, ou
     : [formatPath]
 
   const binaryFiles = Array.isArray(binaryPath) ? binaryPath : [binaryPath]
+
+  ensureDirectoryExistence(outPath)
 
   for (const formatFile of formatFiles) {
     logger.process(`${formatFile}`)
