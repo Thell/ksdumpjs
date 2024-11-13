@@ -1,30 +1,59 @@
 # About
 
-Dumps all `<binary>` files to json using `<format>` files.
+This is a tool to dump binary files into JSON using Kaitai Struct formats.
 
-It captures enum value names, instance values and imported formats. I am sure
-it does not cover even a minor portion of Kaitai Struct's format features but it
-should work for most formats.
+It instantiates instance values, populates enum name values and loads format
+imports.
 
-Once you have a working format for your data (and perhaps are still left with
-'unknowns') this makes it a breeze to import that data into a spreadsheet for
-formatted exploration and filtering, or pretty much any other analysis tool.
+It most likely does not cover many constructs that can be created using Kaitai
+Struct but it should work for most formats. It serves as a lightweight
+alternative to installing the Kaitai Struct Visualizer's ksdump.
 
-**Why?** The Kaitai Struct Web IDE parsing and export to json choke on large
-files because of browser memory limits and the Kaitai Visualizer's `ksdump`
-chokes on some of my formats that otherwise are compiled and iterated over just
-fine using python or javascript. This project uses `json-stream-stringify` to
-avoid maximum string length limits.
+[Kaitai Struct](https://kaitai.io/)  
+[Kaitai Struct Visualizer](https://github.com/kaitai-io/kaitai_struct_visualizer)
 
-On a Ryzen 5700G it is capable of parsing a 165MB binary file using a format
-consisting of 200+ `id` fields having nested types and instanced values in ~3s
-and writing out the 614MB compact json on a 980 Pro SSD in ~25s and the
-formatted 1GB output in ~30s.
+## Install
+
+`npm install -g ksdumpjs`
+
+## Usage
+
+**Concept**
+
+Without any args `ksdumpjs` will use ksy format files in `./formats` to compile
+parsers that are output to `./parsers` and then parse binary files in
+`./binaries` based on the format's meta section using `${id}.{file-extension}`
+to identify a matching binary for the format placing the JSON output in
+`./jsons`.
+
+**Arguments**
+
+```
+--format, -f: Path to a .ksy format file or directory of format files. Default is ./formats.
+--binary, -b: Path to a binary file, directory, or glob pattern. Default is ./binaries.
+--out, -o: Output path for JSON files. Default is ./jsons.
+--parser, -p: Directory for compiled parsers. Default is ./parsers.
+--spaces, -s: Number of spaces for formatted JSON output (use compact output if omitted).
+```
+
+**Details**
+
+| Format     | Binary     | Result | Comment                                                                                          |
+|------------|------------|--------|--------------------------------------------------------------------------------------------------|
+| directory  | directory  | allow  | Use `.ksy` meta `{id}.{file-extension}` to find matches in binary                               |
+| file       | directory  | allow  | Use `.ksy` meta `{id}.{file-extension}` to find match in binary                                 |
+| file       | file       | allow  |                                                                                                |
+| file       | glob       | allow  | Use format on each binary result of glob                                                        |
+| directory  | file       | deny   | Ambiguous: cannot determine which `.ksy` file in the directory should match the binary file     |
+| directory  | glob       | deny   | Ambiguous: cannot determine which `.ksy` file in the directory should match the binary files    |
+| glob       | `<any>`    | deny   | Ambiguous: multiple `.ksy` files could match the binary files                                   |
+
+Note: use forwardslash for paths, backslash will escape any glob tokens.
 
 ## Example
 
 ```
-> node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons --format
+> node ksdump .\test\formats\zip.ksy .\test\samples\sample1.zip .\jsons -s
 ►  ksdump           Initialized timer...
 
 Processing:      .\test\formats\zip.ksy
@@ -40,6 +69,10 @@ Processing:      .\test\formats\zip.ksy
 ```
 
 Verify correctness against Kaitai Struct Web-IDE exported json:
+
+`jq` will sort the field order since the instantiated instance field orders
+differs between ksdumpjs and the Kaitai Struct Web-IDE.
+
 ```ps
 > ./jq -b -S . .\jsons\sample1.json > sorted_sample1.json
 > ./jq -b -S . check_sample1.json > sorted_check_sample1.json
@@ -48,26 +81,13 @@ Verify correctness against Kaitai Struct Web-IDE exported json:
 True
 ```
 
-## Usage
+## Why
 
-Usage: `npm install && node ksdump <format> <binary> <outpath> [--format]`
+ksdumpjs allows you to parse structured binary data into JSON for easier
+integration with analysis tools, such as spreadsheets. Compared to the Kaitai
+Struct Web IDE, which struggles with large files due to browser memory limits,
+ksdumpjs uses json-stream-stringify to avoid memory constraints.
 
-The binary filename associated with a format is taken from the format's meta
-fields as `${id}.${file-extension}`.
-
-### Inputs
-
-If `<format>` is a directory then `<binary>` must also be a directory. Each
-`*.ksy` format file with a matching format meta associated filename will be
-dumped.
-
-If `<format>` is a file and `<binary>` is a file the format's meta associated
-filename is ignored.
-
-If `<format>` is a file and `<binary>` is a directory then the format's meta
-associated filename is searched for in `${binary}`.
-
-### Outputs
-
-The json filename will be taken from the format's meta field as `${id}.json`
-unless `<binary>` is a file, in which case it will be `${binary_stem}.json`.
+On a Ryzen 5700G, ksdumpjs can parse a 165MB binary file containing 200+ fields
+with nested types in ~3 seconds, and output 614MB of JSON in ~25 seconds
+(or 1GB formatted output in ~30 seconds).
